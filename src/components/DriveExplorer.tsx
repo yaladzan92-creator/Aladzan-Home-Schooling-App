@@ -91,6 +91,16 @@ export default function DriveExplorer({
     }
   };
 
+  const handleReconnectDrive = async () => {
+    localStorage.removeItem('pkbm_drive_config');
+    setDriveConfig(null);
+    setExpandedFolders({});
+    setFolderContents({});
+    setErrorMsg('');
+    setInitSuccess(false);
+    await handleInitializeDrive();
+  };
+
   // Toggle expand custom subfolder
   const handleToggleFolder = async (folderName: string, folderId: string) => {
     const isExpanded = !!expandedFolders[folderId];
@@ -261,7 +271,7 @@ export default function DriveExplorer({
               <div className="space-y-3">
                 <div className="space-y-0.5">
                   <h4 className="text-sm font-semibold text-white">TERHUBUNG KE GOOGLE DRIVE</h4>
-                  <p className="text-[10px] text-emerald-400 font-mono">Folder: APP MANAJEMEN SISWA</p>
+                  <p className="text-[10px] text-emerald-400 font-mono">Folder: APP MANAJEMEN SISWA milik owner yang sedang login</p>
                 </div>
 
                 <div className="text-[10.5px] text-white/60 space-y-1 leading-relaxed">
@@ -287,13 +297,24 @@ export default function DriveExplorer({
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    <span>Aktifkan Folder Utama di Drive</span>
+                    <span>{isSetup ? 'Buat Ulang Struktur Drive' : 'Sambungkan ke Google Drive'}</span>
                   </button>
                 ) : (
                   <div className="p-2.5 bg-amber-500/5 border border-amber-500/10 rounded-lg text-[10px] text-amber-500 flex gap-1.5 items-start">
                     <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <span>Lakukan masuk "Google Account (OAuth)" terlebih dahulu untuk mengaktifkan konektivitas sinkronisasi Google Sheet.</span>
                   </div>
+                )}
+
+                {accessToken && isSetup && (
+                  <button
+                    onClick={handleReconnectDrive}
+                    disabled={isLoading}
+                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs font-semibold py-2 px-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sambung Ulang Drive Owner</span>
+                  </button>
                 )}
               </div>
             )}
