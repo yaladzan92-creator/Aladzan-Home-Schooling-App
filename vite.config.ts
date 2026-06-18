@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/Aladzan-Home-Schooling-App/',
+    base: '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -13,7 +13,6 @@ export default defineConfig(() => {
       },
     },
     build: {
-      outDir: 'docs',
       rollupOptions: {
         output: {
           manualChunks(id) {
