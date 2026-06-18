@@ -5,10 +5,41 @@ export interface DriveConfig {
   rootFolderId: string;
   subfolders: Record<string, string>; // Maps "01_DATABASE" -> folderId, "02_PENDAFTARAN" -> id, etc.
   sheets: Record<string, string>;      // Maps "DATABASE_SISWA" -> spreadsheetId, "REKAP_PENDAFTARAN" -> id, etc.
+  ownerEmail?: string;
 }
 
 const DRIVE_BASE_URL = 'https://www.googleapis.com/drive/v3';
 const SHEETS_BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+export function getDriveConfigStorageKey(ownerEmail?: string | null) {
+  return `pkbm_drive_config${ownerEmail ? `_${ownerEmail.toLowerCase()}` : ''}`;
+}
+
+export function loadDriveConfig(ownerEmail?: string | null): DriveConfig | null {
+  const candidates = ownerEmail ? [getDriveConfigStorageKey(ownerEmail)] : ['pkbm_drive_config'];
+  for (const key of candidates) {
+    const cached = localStorage.getItem(key);
+    if (!cached) continue;
+    try {
+      const parsed = JSON.parse(cached) as DriveConfig;
+      if (ownerEmail && parsed.ownerEmail && parsed.ownerEmail.toLowerCase() !== ownerEmail.toLowerCase()) {
+        continue;
+      }
+      return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+export function saveDriveConfig(config: DriveConfig, ownerEmail?: string | null) {
+  const key = getDriveConfigStorageKey(ownerEmail || config.ownerEmail || null);
+  localStorage.setItem(key, JSON.stringify({ ...config, ownerEmail: ownerEmail || config.ownerEmail || undefined }));
+}
+
+export function clearDriveConfig(ownerEmail?: string | null) {
+  localStorage.removeItem(getDriveConfigStorageKey(ownerEmail));
+  if (!ownerEmail) localStorage.removeItem('pkbm_drive_config');
+}
 
 // Helper to make authenticated requests
 async function googleFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -253,7 +284,7 @@ export async function ensureSheetTabs(spreadsheetId: string, accessToken: string
  * Initializes the entire Google Drive Folder & Sheet structure.
  * Will look for an existing setup first to prevent duplication.
  */
-export async function initDriveStructure(accessToken: string, forceRecreate = false): Promise<DriveConfig> {
+export async function initDriveStructure(accessToken: string, forceRecreate = false, ownerEmail?: string | null): Promise<DriveConfig> {
   const rootFolderName = 'APP MANAJEMEN SISWA';
   const subfolderNames = [
     '01_DATABASE',
@@ -374,11 +405,12 @@ export async function initDriveStructure(accessToken: string, forceRecreate = fa
   const driveConfig: DriveConfig = {
     rootFolderId,
     subfolders,
-    sheets
+    sheets,
+    ownerEmail: ownerEmail || undefined
   };
 
   // Cache configuration in client side local storage for quick offline fallback
-  localStorage.setItem('pkbm_drive_config', JSON.stringify(driveConfig));
+  saveDriveConfig(driveConfig, ownerEmail);
 
   return driveConfig;
 }

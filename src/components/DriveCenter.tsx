@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, HardDrive, FolderOpen, RefreshCw, Database, CheckCircle, AlertCircle } from 'lucide-react';
-import { DriveConfig, getDriveStorageInfo, initDriveStructure, listFilesInFolder } from '../driveStorage';
+import { DriveConfig, getDriveStorageInfo, initDriveStructure, listFilesInFolder, loadDriveConfig, saveDriveConfig } from '../driveStorage';
 
 interface DriveCenterProps {
   accessToken: string | null;
+  ownerEmail?: string | null;
 }
 
 function formatBytes(raw?: string) {
@@ -19,10 +20,11 @@ function formatBytes(raw?: string) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[idx]}`;
 }
 
-export default function DriveCenter({ accessToken }: DriveCenterProps) {
+export default function DriveCenter({ accessToken, ownerEmail }: DriveCenterProps) {
   const [driveConfig, setDriveConfig] = useState<DriveConfig | null>(null);
   const [storage, setStorage] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
+  const [diagnostic, setDiagnostic] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -30,11 +32,9 @@ export default function DriveCenter({ accessToken }: DriveCenterProps) {
   const rootLink = useMemo(() => driveConfig?.rootFolderId ? `https://drive.google.com/drive/folders/${driveConfig.rootFolderId}` : '', [driveConfig]);
 
   useEffect(() => {
-    const cached = localStorage.getItem('pkbm_drive_config');
-    if (cached) {
-      try { setDriveConfig(JSON.parse(cached)); } catch {}
-    }
-  }, []);
+    const cached = loadDriveConfig(ownerEmail || storage?.user?.emailAddress || driveConfig?.ownerEmail || null);
+    if (cached) setDriveConfig(cached);
+  }, [ownerEmail, storage?.user?.emailAddress, driveConfig?.ownerEmail]);
 
   const loadInfo = async () => {
     if (!accessToken) return;
@@ -43,12 +43,56 @@ export default function DriveCenter({ accessToken }: DriveCenterProps) {
     try {
       const info = await getDriveStorageInfo(accessToken);
       setStorage(info);
+      const resolvedOwnerEmail = ownerEmail || info?.user?.emailAddress || driveConfig?.ownerEmail || null;
+      const cached = loadDriveConfig(resolvedOwnerEmail);
+      if (cached) setDriveConfig(cached);
       if (driveConfig?.rootFolderId) {
         const rootFiles = await listFilesInFolder(driveConfig.rootFolderId, accessToken);
         setFiles(rootFiles);
       }
     } catch (e: any) {
       setError(e.message || 'Gagal membaca info Drive');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runDiagnostics = async () => {
+    if (!accessToken) {
+      setDiagnostic({ ok: false, reason: 'Token OAuth belum tersedia.' });
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const info = await getDriveStorageInfo(accessToken);
+      const resolvedOwnerEmail = ownerEmail || info?.user?.emailAddress || null;
+      const cached = loadDriveConfig(resolvedOwnerEmail);
+      const activeConfig = cached || driveConfig;
+      const rootFiles = activeConfig?.rootFolderId ? await listFilesInFolder(activeConfig.rootFolderId, accessToken) : [];
+      const mismatch = Boolean(activeConfig?.ownerEmail && resolvedOwnerEmail && activeConfig.ownerEmail.toLowerCase() !== resolvedOwnerEmail.toLowerCase());
+      setStorage(info);
+      setDriveConfig(activeConfig || null);
+      setFiles(rootFiles);
+      setDiagnostic({
+        ok: true,
+        ownerEmail: resolvedOwnerEmail,
+        hasCachedConfig: Boolean(cached),
+        configOwnerEmail: activeConfig?.ownerEmail || null,
+        configRootFolderId: activeConfig?.rootFolderId || null,
+        configSheetCount: activeConfig ? Object.keys(activeConfig.sheets || {}).length : 0,
+        rootFileCount: rootFiles.length,
+        mismatch,
+        quota: info?.storageQuota || null
+      });
+      if (mismatch) {
+        setMessage('Cache Drive berhasil dibaca, tetapi owner email tidak cocok. Gunakan akun owner yang sama untuk koneksi Drive.');
+      } else {
+        setMessage('Diagnostik Drive selesai.');
+      }
+    } catch (e: any) {
+      setDiagnostic({ ok: false, reason: e.message || 'Diagnostik Drive gagal' });
+      setError(e.message || 'Gagal melakukan diagnosis Drive');
     } finally {
       setLoading(false);
     }
@@ -66,7 +110,10 @@ export default function DriveCenter({ accessToken }: DriveCenterProps) {
     setMessage('');
     try {
       const cfg = await initDriveStructure(accessToken, true);
-      setDriveConfig(cfg);
+      const ownerEmail = storage?.user?.emailAddress || cfg.ownerEmail || null;
+      const nextCfg = { ...cfg, ownerEmail: ownerEmail || undefined };
+      setDriveConfig(nextCfg);
+      saveDriveConfig(nextCfg, ownerEmail || nextCfg.ownerEmail || null);
       setMessage('Drive owner berhasil diprovision ulang.');
       await loadInfo();
     } catch (e: any) {
@@ -96,6 +143,9 @@ export default function DriveCenter({ accessToken }: DriveCenterProps) {
             <button onClick={loadInfo} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 text-xs font-semibold flex items-center gap-1.5">
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
+            <button onClick={runDiagnostics} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 text-xs font-semibold flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5" /> Diagnostik
+            </button>
             <button onClick={handleSetup} className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5">
               <FolderOpen className="w-3.5 h-3.5" /> Buat / Sambung Drive
             </button>
@@ -123,6 +173,18 @@ export default function DriveCenter({ accessToken }: DriveCenterProps) {
             {rootLink && <a className="text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 mt-2" href={rootLink} target="_blank" rel="noreferrer">Buka folder <ExternalLink className="w-3 h-3" /></a>}
           </div>
         </div>
+
+        {diagnostic && (
+          <div className="rounded-xl border border-white/5 bg-black/20 p-4 text-xs text-white/75 space-y-2">
+            <div className="font-semibold text-white">Hasil Diagnostik</div>
+            <div>Owner API: {diagnostic.ownerEmail || '-'}</div>
+            <div>Cache config: {diagnostic.hasCachedConfig ? 'Ada' : 'Tidak ada'}</div>
+            <div>Owner config: {diagnostic.configOwnerEmail || '-'}</div>
+            <div>Root folder: {diagnostic.configRootFolderId || '-'}</div>
+            <div>Total file root: {diagnostic.rootFileCount ?? 0}</div>
+            <div>Mismatch owner: {diagnostic.mismatch ? 'Ya' : 'Tidak'}</div>
+          </div>
+        )}
       </div>
 
       {driveConfig && (

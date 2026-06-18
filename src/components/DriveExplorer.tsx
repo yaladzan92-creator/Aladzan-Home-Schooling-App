@@ -22,11 +22,15 @@ import {
   listFilesInFolder, 
   syncLocalDatabaseToDrive, 
   pullDatabaseFromDrive, 
-  createDriveBackup 
+  createDriveBackup,
+  loadDriveConfig,
+  saveDriveConfig,
+  clearDriveConfig
 } from '../driveStorage';
 
 interface DriveExplorerProps {
   accessToken: string | null;
+  ownerEmail?: string | null;
   onSyncComplete: (syncedData: any) => void;
   getAppState: () => any;
   onAddLog: (actionType: string, description: string) => void;
@@ -34,6 +38,7 @@ interface DriveExplorerProps {
 
 export default function DriveExplorer({ 
   accessToken, 
+  ownerEmail,
   onSyncComplete, 
   getAppState, 
   onAddLog 
@@ -57,16 +62,9 @@ export default function DriveExplorer({
 
   // Load cached drive configuration from localStorage on paint
   useEffect(() => {
-    const cached = localStorage.getItem('pkbm_drive_config');
-    if (cached) {
-      try {
-        setDriveConfig(JSON.parse(cached));
-      } catch (_) {
-        // clear corrupted cache
-        localStorage.removeItem('pkbm_drive_config');
-      }
-    }
-  }, []);
+    const cached = loadDriveConfig(ownerEmail || null);
+    if (cached) setDriveConfig(cached);
+  }, [ownerEmail]);
 
   // Handle Drive setup
   const handleInitializeDrive = async () => {
@@ -80,8 +78,9 @@ export default function DriveExplorer({
     setErrorMsg('');
 
     try {
-      const config = await initDriveStructure(accessToken);
+      const config = await initDriveStructure(accessToken, false);
       setDriveConfig(config);
+      saveDriveConfig(config, ownerEmail || config.ownerEmail || null);
       setInitSuccess(true);
       onAddLog('DRIVE_INIT', 'Menginisialisasi struktur root folder APP MANAJEMEN SISWA dan subfolder Google Drive.');
     } catch (err: any) {
@@ -92,7 +91,7 @@ export default function DriveExplorer({
   };
 
   const handleReconnectDrive = async () => {
-    localStorage.removeItem('pkbm_drive_config');
+    clearDriveConfig(ownerEmail || driveConfig?.ownerEmail || null);
     setDriveConfig(null);
     setExpandedFolders({});
     setFolderContents({});

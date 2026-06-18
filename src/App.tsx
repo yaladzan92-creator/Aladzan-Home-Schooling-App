@@ -1,13 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { 
-  initAuth, 
-  googleSignIn, 
-  logout,
-  getAccessToken,
-  handleRedirectResult
-} from './auth';
-import { 
   Course, 
   listCourses, 
   createCourseWork, 
@@ -30,7 +23,9 @@ import {
   uploadDocumentToDrive,
   createStudentFolderStructure,
   syncLocalDatabaseToDrive,
-  listFilesInFolder
+  listFilesInFolder,
+  loadDriveConfig,
+  saveDriveConfig
 } from './driveStorage';
 
 // Modular Components
@@ -81,10 +76,11 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  type AppRole = 'guest' | 'siswa' | 'guru' | 'developer' | 'owner';
   // Navigation & User State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [gToken, setGToken] = useState<string | null>(null);
-  const [authRole, setAuthRole] = useState<'guest' | 'siswa' | 'guru' | 'admin'>('guest');
+  const [authRole, setAuthRole] = useState<AppRole>('guest');
   const [loggedInEmail, setLoggedInEmail] = useState<string>('');
   const [loggedInName, setLoggedInName] = useState<string>('Tamu / Siswa');
   
@@ -127,6 +123,16 @@ export default function App() {
   const [categoryFiles, setCategoryFiles] = useState<any[]>([]);
   const [loadingFiles, setLoadingFiles] = useState<boolean>(false);
 
+  const resolveAppRole = (email?: string | null, accountRole?: string | null): AppRole => {
+    const normalized = (email || '').toLowerCase();
+    if (normalized === 'pkbmsrikandi.cwd.92@gmail.com' || normalized.endsWith('@admin.pkbm')) return 'owner';
+    if (normalized.includes('developer')) return 'developer';
+    if (accountRole === 'guru') return 'guru';
+    if (accountRole === 'admin') return 'owner';
+    if (accountRole === 'siswa') return 'siswa';
+    return 'siswa';
+  };
+
   useEffect(() => {
     if (editingStudent && gToken) {
       const catId = editingStudent.subfolderIds?.[activeViewCategory];
@@ -160,52 +166,51 @@ export default function App() {
     setPosts(DatabaseManager.getPostHistory());
     setLogs(DatabaseManager.getLogs());
 
-    const cachedConfig = localStorage.getItem('pkbm_drive_config');
-    if (cachedConfig) {
+    let alive = true;
+    (async () => {
       try {
-        setAppDriveConfig(JSON.parse(cachedConfig));
-      } catch (_) {}
-    }
-
-    // Connect standard listener
-    handleRedirectResult().catch(err => {
-      console.warn('Redirect auth check failed:', err);
-    });
-
-    initAuth(
-      (user, token) => {
-        setCurrentUser(user);
-        setGToken(token);
-        // Automatically check if admin
-        if (user.email === 'pkbmsrikandi.cwd.92@gmail.com' || user.email?.endsWith('@admin.pkbm')) {
-          setAuthRole('admin');
-          setLoggedInEmail(user.email || '');
-          setLoggedInName(user.displayName || 'Admin PKBM Srikandi');
-          setCurrentNav('dashboard');
-          logAction(user.email || '', 'LOGIN', 'Admin login via Google OAuth berhasil.');
-        } else {
-          // Check standard accounts
-          const registered = DatabaseManager.getAccounts().find(a => a.email === user.email);
-          if (registered) {
-            setAuthRole(registered.role);
+        const authModule = await import('./auth');
+        await authModule.handleRedirectResult().catch(err => {
+          console.warn('Redirect auth check failed:', err);
+        });
+        authModule.initAuth(
+          (user, token) => {
+            if (!alive) return;
+            setCurrentUser(user);
+            setGToken(token);
+            const registered = DatabaseManager.getAccounts().find(a => a.email === user.email);
+            const nextRole = resolveAppRole(user.email, registered?.role);
+            setAuthRole(nextRole);
             setLoggedInEmail(user.email || '');
-            setLoggedInName(registered.fullName || user.displayName || 'Siswa Kelas');
+            setLoggedInName(registered?.fullName || user.displayName || 'Pendaftar Baru');
             setCurrentNav('dashboard');
-          } else {
-            // Unverified default login as Student
-            setAuthRole('siswa');
-            setLoggedInEmail(user.email || '');
-            setLoggedInName(user.displayName || 'Pendaftar Baru');
-            setCurrentNav('dashboard');
+            if (nextRole === 'owner') {
+              logAction(user.email || '', 'LOGIN', 'Owner login via Google OAuth berhasil.');
+            } else if (nextRole === 'developer') {
+              logAction(user.email || '', 'LOGIN', 'Developer login via Google OAuth berhasil.');
+            } else {
+              logAction(user.email || '', 'LOGIN', `Login sukses via Google OAuth (${nextRole}).`);
+            }
+            const cachedConfig = loadDriveConfig(user.email || null);
+            if (cachedConfig) {
+              setAppDriveConfig(cachedConfig);
+            }
+          },
+          () => {
+            if (!alive) return;
+            // Fallback or user logged out
+            setCurrentUser(null);
+            setGToken(null);
           }
-        }
-      },
-      () => {
-        // Fallback or user logged out
-        setCurrentUser(null);
-        setGToken(null);
+        );
+      } catch (err) {
+        console.warn('Auth bootstrap failed:', err);
       }
-    );
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Fetch classroom courses from Google API if token is valid
@@ -414,31 +419,22 @@ export default function App() {
   // Google OAuth Login Trigger
   const handleGoogleSignIn = async () => {
     try {
-      const authResult = await googleSignIn();
+      const authModule = await import('./auth');
+      const authResult = await authModule.googleSignIn();
       if (authResult?.user) {
         const email = authResult.user.email || '';
         const registered = DatabaseManager.getAccounts().find(a => a.email.toLowerCase() === email.toLowerCase());
-        const isAdminGoogle = email.toLowerCase() === 'pkbmsrikandi.cwd.92@gmail.com' || email.toLowerCase().endsWith('@admin.pkbm');
-
-        if (isAdminGoogle) {
-          setAuthRole('admin');
-          setLoggedInEmail(email);
-          setLoggedInName(authResult.user.displayName || 'Admin PKBM Srikandi');
-          setCurrentNav('dashboard');
-          logAction(email, 'LOGIN', 'Admin login via Google OAuth berhasil.');
+        const nextRole = resolveAppRole(email, registered?.role);
+        if (nextRole === 'siswa' && !registered) {
+          setLoginError('Akun Google ini belum terdaftar di sistem. Gunakan akun yang sudah diberi akses.');
           return;
         }
 
-        if (registered) {
-          setAuthRole(registered.role);
-          setLoggedInEmail(email);
-          setLoggedInName(registered.fullName || authResult.user.displayName || 'Siswa Kelas');
-          setCurrentNav('dashboard');
-          logAction(email, 'LOGIN', `Login sukses via Google OAuth (${registered.role}).`);
-          return;
-        }
-
-        setLoginError('Akun Google ini belum terdaftar di sistem. Gunakan akun yang sudah diberi akses.');
+        setAuthRole(nextRole);
+        setLoggedInEmail(email);
+        setLoggedInName(registered?.fullName || authResult.user.displayName || 'Pendaftar Baru');
+        setCurrentNav('dashboard');
+        logAction(email, 'LOGIN', `Login sukses via Google OAuth (${nextRole}).`);
         return;
       }
       setLoginError('Mengalihkan ke Google untuk otorisasi...');
@@ -475,7 +471,8 @@ export default function App() {
 
   // Sign out
   const handleLogout = async () => {
-    await logout();
+    const authModule = await import('./auth');
+    await authModule.logout();
     logAction(loggedInEmail, 'LOGOUT', 'Sesi pengguna ditiadakan (Logout).');
     setAuthRole('guest');
     setLoggedInEmail('');
@@ -635,11 +632,11 @@ export default function App() {
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${currentNav === 'dashboard' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' : 'text-white/60 hover:text-white'}`}
             >
               <Fingerprint className="w-3.5 h-3.5" />
-              <span>Dashboard {authRole === 'admin' ? 'Admin' : authRole === 'guru' ? 'Guru' : 'Siswa'}</span>
+              <span>Dashboard {authRole === 'owner' ? 'Owner' : authRole === 'developer' ? 'Developer' : authRole === 'guru' ? 'Guru' : 'Siswa'}</span>
             </button>
           )}
 
-          {authRole === 'admin' && (
+          {(authRole === 'owner' || authRole === 'developer') && (
             <button
               onClick={() => setCurrentNav('sheets')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${currentNav === 'sheets' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' : 'text-white/60 hover:text-white'}`}
@@ -649,7 +646,7 @@ export default function App() {
             </button>
           )}
 
-          {authRole !== 'guest' && (
+          {authRole === 'owner' && (
             <button
               onClick={() => setCurrentNav('drive')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${currentNav === 'drive' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' : 'text-white/60 hover:text-white'}`}
@@ -910,7 +907,7 @@ export default function App() {
         {currentNav === 'drive' && (
           <div id="drive-center-view" className="space-y-6">
             <Suspense fallback={LazyFallback}>
-              <DriveCenter accessToken={gToken} />
+              {authRole === 'owner' && <DriveCenter accessToken={gToken} ownerEmail={currentUser?.email || loggedInEmail || null} />}
             </Suspense>
           </div>
         )}
@@ -920,18 +917,20 @@ export default function App() {
           <div id="user-dashboard-view" className="space-y-8">
             
             {/* 1. ADMIN & GURU DASHBOARD AREA */}
-            {(authRole === 'admin' || authRole === 'guru') && (
+            {(authRole === 'owner' || authRole === 'developer' || authRole === 'guru') && (
               <div id="admin-dashboard-container" className="space-y-8">
                 
                 {/* Dashboard summary board */}
                 <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div>
                     <span className="text-[9px] font-mono uppercase bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded font-bold tracking-widest">
-                      KONSOL OPERATOR {authRole}
+                      KONSOL {authRole === 'owner' ? 'OWNER' : authRole === 'developer' ? 'DEVELOPER' : 'GURU'}
                     </span>
                     <h3 className="text-2xl font-serif italic text-white mt-1.5">{loggedInName}</h3>
                     <p className="text-xs text-white/50 leading-relaxed">
-                      Mengelola pendaftaran di Google Sheets, linkings Google Classroom, perumusan bahan ajar AI Gemini, & status ijazah lulusan.
+                      {authRole === 'owner' && 'Pusat kendali penuh: provisioning Drive, Sheets, Classroom, dan arsip owner.'}
+                      {authRole === 'developer' && 'Area pengembangan: monitor data, uji sinkronisasi, dan bantu perawatan sistem.'}
+                      {authRole === 'guru' && 'Area guru: kelola pembelajaran, Classroom, dan materi ajar.'}
                     </p>
                   </div>
 
@@ -949,68 +948,70 @@ export default function App() {
                 </div>
 
                 {/* 1.5 GOOGLE DRIVE TREE EXPLORER & SPREADSHEETS SYNC PLATFORM */}
-                <Suspense fallback={LazyFallback}>
-                  <DriveExplorer
-                    accessToken={gToken}
-                    onSyncComplete={(pulledData) => {
-                      if (pulledData.students) {
-                        setStudents(pulledData.students);
-                        DatabaseManager.saveStudents(pulledData.students);
-                      }
-                      if (pulledData.ijazahs) {
-                        setIjazahs(pulledData.ijazahs);
-                        DatabaseManager.saveIjazahConfirmations(pulledData.ijazahs);
-                      }
-                      if (pulledData.accounts) {
-                        setAccounts(pulledData.accounts);
-                        DatabaseManager.saveAccounts(pulledData.accounts);
-                      }
-                      if (pulledData.mappings) {
-                        setMappings(pulledData.mappings);
-                        DatabaseManager.saveMappings(pulledData.mappings);
-                      }
-                      if (pulledData.posts) {
-                        setPosts(pulledData.posts);
-                        DatabaseManager.savePostHistory(pulledData.posts);
-                      }
-                      if (pulledData.logs) {
-                        setLogs(pulledData.logs);
-                        DatabaseManager.saveLogs(pulledData.logs);
-                      }
-                      
-                      // Refresh configuration reference
-                      const cached = localStorage.getItem('pkbm_drive_config');
-                      if (cached) {
-                        setAppDriveConfig(JSON.parse(cached));
-                      }
-                    }}
-                    getAppState={() => ({
-                      students,
-                      ijazahs,
-                      accounts,
-                      mappings,
-                      posts,
-                      logs
-                    })}
-                    onAddLog={(actionType, description) => {
-                      logAction(loggedInEmail || 'system', actionType, description);
-                    }}
-                  />
-                </Suspense>
+                {authRole === 'owner' && (
+                  <Suspense fallback={LazyFallback}>
+                    <DriveExplorer
+                      accessToken={gToken}
+                      ownerEmail={currentUser?.email || loggedInEmail || null}
+                      onSyncComplete={(pulledData) => {
+                        if (pulledData.students) {
+                          setStudents(pulledData.students);
+                          DatabaseManager.saveStudents(pulledData.students);
+                        }
+                        if (pulledData.ijazahs) {
+                          setIjazahs(pulledData.ijazahs);
+                          DatabaseManager.saveIjazahConfirmations(pulledData.ijazahs);
+                        }
+                        if (pulledData.accounts) {
+                          setAccounts(pulledData.accounts);
+                          DatabaseManager.saveAccounts(pulledData.accounts);
+                        }
+                        if (pulledData.mappings) {
+                          setMappings(pulledData.mappings);
+                          DatabaseManager.saveMappings(pulledData.mappings);
+                        }
+                        if (pulledData.posts) {
+                          setPosts(pulledData.posts);
+                          DatabaseManager.savePostHistory(pulledData.posts);
+                        }
+                        if (pulledData.logs) {
+                          setLogs(pulledData.logs);
+                          DatabaseManager.saveLogs(pulledData.logs);
+                        }
+                        
+                        const cached = loadDriveConfig(loggedInEmail || null);
+                        if (cached) setAppDriveConfig(cached);
+                      }}
+                      getAppState={() => ({
+                        students,
+                        ijazahs,
+                        accounts,
+                        mappings,
+                        posts,
+                        logs
+                      })}
+                      onAddLog={(actionType, description) => {
+                        logAction(loggedInEmail || 'system', actionType, description);
+                      }}
+                    />
+                  </Suspense>
+                )}
 
                 {/* AI COURSEWORK PANEL (FEATURE 7 & 5) */}
-              <Suspense fallback={LazyFallback}>
-                <AICoursework
-                  mappings={mappings}
-                  accessToken={gToken}
-                  onPostCreated={handleAIPostCreated}
-                  googleClassroomsList={classroomCourses.map(c => ({ id: c.id, name: c.name }))}
-                  isPostingToRealGoogleClassroom={isPostingRealClassrooms}
-                  setIsPostingToRealGoogleClassroom={setIsPostingRealClassrooms}
-                  createCourseWork={createCourseWork}
-                  createCourseWorkMaterial={createCourseWorkMaterial}
-                />
-              </Suspense>
+                {(authRole === 'owner' || authRole === 'developer' || authRole === 'guru') && (
+                  <Suspense fallback={LazyFallback}>
+                    <AICoursework
+                      mappings={mappings}
+                      accessToken={gToken}
+                      onPostCreated={handleAIPostCreated}
+                      googleClassroomsList={classroomCourses.map(c => ({ id: c.id, name: c.name }))}
+                      isPostingToRealGoogleClassroom={isPostingRealClassrooms}
+                      setIsPostingToRealGoogleClassroom={setIsPostingRealClassrooms}
+                      createCourseWork={createCourseWork}
+                      createCourseWorkMaterial={createCourseWorkMaterial}
+                    />
+                  </Suspense>
+                )}
 
                 {/* DOUBLE COLUMN: MAIN STUDENTS TABLES & CLASSROOM MAPPING */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1019,8 +1020,14 @@ export default function App() {
                   <div className="lg:col-span-2 space-y-4 bg-[#0f0f13] border border-white/5 rounded-2xl p-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
                       <div>
-                        <h4 className="font-serif italic text-white text-base font-semibold">Manajemen & Verifikasi Pendaftaran</h4>
-                        <p className="text-[10px] text-white/50">Memasukkan atau mengonversi status siswa ke Google Sheets utama</p>
+                        <h4 className="font-serif italic text-white text-base font-semibold">
+                          {authRole === 'owner' ? 'Manajemen & Verifikasi Pendaftaran' : authRole === 'developer' ? 'Monitoring Data' : 'Manajemen Kelas'}
+                        </h4>
+                        <p className="text-[10px] text-white/50">
+                          {authRole === 'owner' && 'Memasukkan atau mengonversi status siswa ke Google Sheets utama'}
+                          {authRole === 'developer' && 'Melihat data, memantau sinkronisasi, dan menguji integrasi'}
+                          {authRole === 'guru' && 'Mengatur kelas, materi, dan tindak lanjut pembelajaran'}
+                        </p>
                       </div>
 
                       {/* Filter Program dropdown */}
