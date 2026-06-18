@@ -13,6 +13,8 @@ import {
   IjazahConfirmation, 
   StudentAccount, 
   ClassroomMapping, 
+  ProgramItem,
+  ReferralCodeItem,
   PostingHistory, 
   AdminLog,
   hashPassword
@@ -92,12 +94,32 @@ export default function App() {
   const [ijazahs, setIjazahs] = useState<IjazahConfirmation[]>([]);
   const [accounts, setAccounts] = useState<StudentAccount[]>([]);
   const [mappings, setMappings] = useState<ClassroomMapping[]>([]);
+  const [programs, setPrograms] = useState<ProgramItem[]>([]);
+  const [referrals, setReferrals] = useState<ReferralCodeItem[]>([]);
   const [posts, setPosts] = useState<PostingHistory[]>([]);
   const [logs, setLogs] = useState<AdminLog[]>([]);
 
   // Selection states for admin
   const [selectedProgramFilter, setSelectedProgramFilter] = useState<string>('Semua');
   const [searchStudentQuery, setSearchStudentQuery] = useState<string>('');
+  const [ownerProgramName, setOwnerProgramName] = useState('');
+  const [ownerProgramCategory, setOwnerProgramCategory] = useState<'Paket' | 'Nonpaket' | 'Keterampilan'>('Paket');
+  const [ownerProgramNotes, setOwnerProgramNotes] = useState('');
+  const [ownerAccountEmail, setOwnerAccountEmail] = useState('');
+  const [ownerAccountName, setOwnerAccountName] = useState('');
+  const [ownerAccountRole, setOwnerAccountRole] = useState<'guru' | 'admin' | 'developer'>('guru');
+  const [ownerAccountPassword, setOwnerAccountPassword] = useState('');
+  const [ownerAccountPrograms, setOwnerAccountPrograms] = useState('');
+  const [ownerReferralCode, setOwnerReferralCode] = useState('');
+  const [ownerReferralName, setOwnerReferralName] = useState('');
+  const [ownerReferralWhatsapp, setOwnerReferralWhatsapp] = useState('');
+  const [ownerReferralBonusType, setOwnerReferralBonusType] = useState('Uang Tunai');
+  const [ownerReferralBonusAmount, setOwnerReferralBonusAmount] = useState('50000');
+  const [ownerReferralPaymentAmount, setOwnerReferralPaymentAmount] = useState('50000');
+  const [ownerReferralPaymentNote, setOwnerReferralPaymentNote] = useState('');
+  const [editingProgramId, setEditingProgramId] = useState('');
+  const [editingStaffEmail, setEditingStaffEmail] = useState('');
+  const [editingReferralCode, setEditingReferralCode] = useState('');
   
   // Google Classroom API states
   const [classroomCourses, setClassroomCourses] = useState<Course[]>([]);
@@ -133,6 +155,21 @@ export default function App() {
     return 'siswa';
   };
 
+  const syncPrograms = (next: ProgramItem[]) => {
+    setPrograms(next);
+    DatabaseManager.savePrograms(next);
+  };
+
+  const syncAccounts = (next: StudentAccount[]) => {
+    setAccounts(next);
+    DatabaseManager.saveAccounts(next);
+  };
+
+  const syncReferrals = (next: ReferralCodeItem[]) => {
+    setReferrals(next);
+    DatabaseManager.saveReferralCodes(next);
+  };
+
   useEffect(() => {
     if (editingStudent && gToken) {
       const catId = editingStudent.subfolderIds?.[activeViewCategory];
@@ -163,6 +200,8 @@ export default function App() {
     setIjazahs(DatabaseManager.getIjazahConfirmations());
     setAccounts(DatabaseManager.getAccounts());
     setMappings(DatabaseManager.getMappings());
+    setPrograms(DatabaseManager.getPrograms());
+    setReferrals(DatabaseManager.getReferralCodes());
     setPosts(DatabaseManager.getPostHistory());
     setLogs(DatabaseManager.getLogs());
 
@@ -248,6 +287,115 @@ export default function App() {
     setLogs(updated);
     DatabaseManager.saveLogs(updated);
     DatabaseManager.syncToFirestore('admin_logs', newLog.id, newLog);
+  };
+
+  const handleAddProgram = () => {
+    const name = ownerProgramName.trim();
+    if (!name) return;
+    const next: ProgramItem[] = [
+      { id: `prog_${Date.now()}`, name, active: true, category: ownerProgramCategory, notes: ownerProgramNotes.trim() || undefined },
+      ...programs.filter(p => p.name.toLowerCase() !== name.toLowerCase())
+    ];
+    syncPrograms(next);
+    logAction(loggedInEmail, 'PROGRAM_ADD', `Program ditambahkan: ${name}`);
+    setOwnerProgramName('');
+    setOwnerProgramNotes('');
+  };
+
+  const handleSaveProgramEdit = () => {
+    const target = programs.find(p => p.id === editingProgramId);
+    if (!target) return;
+    const next = programs.map(p => p.id === editingProgramId ? { ...p, name: ownerProgramName.trim() || p.name, category: ownerProgramCategory, notes: ownerProgramNotes.trim() || undefined } : p);
+    syncPrograms(next);
+    logAction(loggedInEmail, 'PROGRAM_EDIT', `Program ${target.name} diperbarui.`);
+  };
+
+  const handleToggleProgram = (programId: string) => {
+    const next = programs.map(p => p.id === programId ? { ...p, active: !p.active } : p);
+    syncPrograms(next);
+    const item = next.find(p => p.id === programId);
+    if (item) logAction(loggedInEmail, 'PROGRAM_UPDATE', `Program ${item.name} diubah menjadi ${item.active ? 'aktif' : 'nonaktif'}.`);
+  };
+
+  const handleAddStaffAccount = () => {
+    const email = ownerAccountEmail.trim().toLowerCase();
+    const name = ownerAccountName.trim();
+    const pass = ownerAccountPassword.trim();
+    if (!email || !name || !pass) return;
+    const next: StudentAccount[] = [
+      {
+        email,
+        passwordHash: hashPassword(pass),
+        role: ownerAccountRole,
+        fullName: name,
+        registeredAt: new Date().toISOString(),
+        active: true,
+        assignedPrograms: ownerAccountPrograms.split(',').map(s => s.trim()).filter(Boolean)
+      },
+      ...accounts.filter(a => a.email.toLowerCase() !== email)
+    ];
+    syncAccounts(next);
+    logAction(loggedInEmail, 'STAFF_ADD', `Akun ${ownerAccountRole} ditambahkan: ${email}`);
+    setOwnerAccountEmail('');
+    setOwnerAccountName('');
+    setOwnerAccountPassword('');
+    setOwnerAccountPrograms('');
+  };
+
+  const handleSaveStaffEdit = () => {
+    const target = accounts.find(a => a.email.toLowerCase() === editingStaffEmail.toLowerCase());
+    if (!target) return;
+    const next = accounts.map(a => a.email.toLowerCase() === editingStaffEmail.toLowerCase() ? {
+      ...a,
+      fullName: ownerAccountName.trim() || a.fullName,
+      role: ownerAccountRole,
+      active: a.active === false ? false : true,
+      assignedPrograms: ownerAccountPrograms.split(',').map(s => s.trim()).filter(Boolean)
+    } : a);
+    syncAccounts(next);
+    logAction(loggedInEmail, 'STAFF_EDIT', `Akun ${target.email} diperbarui.`);
+  };
+
+  const handleToggleStaff = (email: string) => {
+    const next = accounts.map(a => a.email.toLowerCase() === email.toLowerCase() ? { ...a, active: a.active === false ? true : false } : a);
+    syncAccounts(next);
+    const item = next.find(a => a.email.toLowerCase() === email.toLowerCase());
+    if (item) logAction(loggedInEmail, 'STAFF_UPDATE', `Akun ${email} ${item.active === false ? 'dinonaktifkan' : 'diaktifkan'}.`);
+  };
+
+  const handleAddReferral = () => {
+    const code = ownerReferralCode.trim().toUpperCase();
+    if (!code) return;
+    const next: ReferralCodeItem[] = [
+      {
+        code,
+        ownerName: ownerReferralName.trim(),
+        whatsapp: ownerReferralWhatsapp.trim(),
+        bonusType: ownerReferralBonusType,
+        bonusAmount: Number(ownerReferralBonusAmount || 0),
+        totalStudents: 0,
+        bonusStatus: 'belum dibayar',
+        paymentHistory: []
+      },
+      ...referrals.filter(r => r.code !== code)
+    ];
+    syncReferrals(next);
+    logAction(loggedInEmail, 'REFERRAL_ADD', `Kode referensi ditambahkan: ${code}`);
+    setOwnerReferralCode('');
+    setOwnerReferralName('');
+    setOwnerReferralWhatsapp('');
+  };
+
+  const handleSaveReferralPayment = () => {
+    const code = editingReferralCode.trim().toUpperCase();
+    const next = referrals.map(r => r.code === code ? {
+      ...r,
+      paymentHistory: [...r.paymentHistory, { amount: Number(ownerReferralPaymentAmount || 0), paidAt: new Date().toISOString(), note: ownerReferralPaymentNote.trim() || undefined }],
+      bonusStatus: 'sudah dibayar'
+    } : r);
+    syncReferrals(next);
+    logAction(loggedInEmail, 'REFERRAL_PAY', `Pembayaran bonus referensi dicatat untuk ${code}.`);
+    setOwnerReferralPaymentNote('');
   };
 
   // Student registration handler
@@ -566,16 +714,22 @@ export default function App() {
   const studentMatchedPosts = posts.filter(p => p.courseId === matchedCourseId);
 
   // Available programs for select inputs
-  const INITIAL_PROGRAMS = [
-    'Agribisnis Tanaman Pangan',
-    'Kewirausahaan Kreatif PKBM',
-    'Teknologi Informasi & Jasa Desa',
-    'Tata Busana Kreatif',
-    'Paket C Kelas 12',
-    'Paket B Kelas 9',
-    'Paket A Kelas 6'
-  ];
+  const INITIAL_PROGRAMS = programs.filter(p => p.active).map(p => p.name);
 
+  const studentsByProgram = students.reduce((acc: Record<string, number>, item) => {
+    const key = item.chosenProgram || 'Tanpa Program';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const studentsByClass = students.reduce((acc: Record<string, number>, item) => {
+    const key = item.studentClass || 'Tanpa Kelas';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const referralStudentTotal = referrals.reduce((sum, item) => sum + Number(item.totalStudents || 0), 0);
+  const referralBonusTotal = referrals.reduce((sum, item) => sum + Number(item.bonusAmount || 0) * Number(item.paymentHistory?.length || 0), 0);
+  const activeStaffCount = accounts.filter(a => a.role !== 'siswa' && a.active !== false).length;
+  const activeProgramCount = programs.filter(p => p.active).length;
   const LazyFallback = (
     <div className="rounded-2xl border border-white/5 bg-[#0f0f13] px-4 py-6 text-center text-xs text-white/50">
       Memuat modul...
@@ -946,6 +1100,190 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+
+                {authRole === 'owner' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 space-y-4">
+                      <h4 className="font-serif italic text-white text-base font-semibold">Atur Program</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <select value={editingProgramId} onChange={(e) => {
+                          const p = programs.find(x => x.id === e.target.value);
+                          setEditingProgramId(e.target.value);
+                          setOwnerProgramName(p?.name || '');
+                          setOwnerProgramCategory(p?.category || 'Paket');
+                          setOwnerProgramNotes(p?.notes || '');
+                        }} className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none md:col-span-2">
+                          <option value="">Pilih program untuk edit</option>
+                          {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        <input value={ownerProgramName} onChange={(e) => setOwnerProgramName(e.target.value)} placeholder="Nama program baru" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <select value={ownerProgramCategory} onChange={(e) => setOwnerProgramCategory(e.target.value as any)} className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none">
+                          <option value="Paket">Paket</option>
+                          <option value="Nonpaket">Nonpaket</option>
+                          <option value="Keterampilan">Keterampilan</option>
+                        </select>
+                      </div>
+                      <textarea value={ownerProgramNotes} onChange={(e) => setOwnerProgramNotes(e.target.value)} placeholder="Catatan program" className="w-full bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" rows={3} />
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={handleAddProgram} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl">Tambah Program</button>
+                        <button onClick={handleSaveProgramEdit} className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2 rounded-xl border border-white/10">Simpan Edit</button>
+                      </div>
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {programs.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between gap-3 bg-black/30 border border-white/5 rounded-xl p-3">
+                            <div>
+                              <div className="text-sm text-white font-semibold">{p.name}</div>
+                              <div className="text-[10px] text-white/40">{p.category} {p.notes ? `â€¢ ${p.notes}` : ''}</div>
+                            </div>
+                            <button onClick={() => handleToggleProgram(p.id)} className={`text-[10px] font-bold px-3 py-1.5 rounded-lg ${p.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-white/50'}`}>
+                              {p.active ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 space-y-4">
+                      <h4 className="font-serif italic text-white text-base font-semibold">Atur Akun Guru / Admin / Developer</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <select value={editingStaffEmail} onChange={(e) => {
+                          const a = accounts.find(x => x.email.toLowerCase() === e.target.value.toLowerCase());
+                          setEditingStaffEmail(e.target.value);
+                          setOwnerAccountEmail(a?.email || '');
+                          setOwnerAccountName(a?.fullName || '');
+                          setOwnerAccountRole((a?.role as any) || 'guru');
+                          setOwnerAccountPrograms((a?.assignedPrograms || []).join(', '));
+                        }} className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none md:col-span-2">
+                          <option value="">Pilih akun untuk edit</option>
+                          {accounts.filter(a => a.role !== 'siswa').map(a => <option key={a.email} value={a.email}>{a.email}</option>)}
+                        </select>
+                        <input value={ownerAccountEmail} onChange={(e) => setOwnerAccountEmail(e.target.value)} placeholder="Email akun" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <input value={ownerAccountName} onChange={(e) => setOwnerAccountName(e.target.value)} placeholder="Nama lengkap" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <select value={ownerAccountRole} onChange={(e) => setOwnerAccountRole(e.target.value as any)} className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none">
+                          <option value="guru">Guru</option>
+                          <option value="admin">Admin</option>
+                          <option value="developer">Developer</option>
+                        </select>
+                        <input value={ownerAccountPassword} onChange={(e) => setOwnerAccountPassword(e.target.value)} placeholder="Password awal" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                      </div>
+                      <input value={ownerAccountPrograms} onChange={(e) => setOwnerAccountPrograms(e.target.value)} placeholder="Program/kelas ditugaskan, pisahkan dengan koma" className="w-full bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={handleAddStaffAccount} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl">Tambah Akun Staf</button>
+                        <button onClick={handleSaveStaffEdit} className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2 rounded-xl border border-white/10">Simpan Edit</button>
+                      </div>
+                      <div className="overflow-hidden rounded-xl border border-white/5 bg-black/25">
+                        <div className="max-h-56 overflow-y-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="sticky top-0 bg-[#0b0b0e] text-white/40 uppercase tracking-wider text-[10px]">
+                              <tr>
+                                <th className="px-3 py-2">Nama</th>
+                                <th className="px-3 py-2">Role</th>
+                                <th className="px-3 py-2">Program</th>
+                                <th className="px-3 py-2">Status</th>
+                                <th className="px-3 py-2">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {accounts.filter(a => a.role !== 'siswa').map((a) => (
+                                <tr key={a.email} className="border-t border-white/5">
+                                  <td className="px-3 py-2">
+                                    <div className="text-white font-semibold">{a.fullName}</div>
+                                    <div className="text-[10px] text-white/40">{a.email}</div>
+                                  </td>
+                                  <td className="px-3 py-2 text-white/80 capitalize">{a.role}</td>
+                                  <td className="px-3 py-2 text-white/60">{(a.assignedPrograms || []).slice(0, 2).join(', ') || '-'}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${a.active === false ? 'bg-rose-500/10 text-rose-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
+                                      {a.active === false ? 'Nonaktif' : 'Aktif'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <button onClick={() => handleToggleStaff(a.email)} className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/5 text-white/70 hover:bg-white/10">
+                                      {a.active === false ? 'Aktifkan' : 'Nonaktifkan'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 space-y-4">
+                      <h4 className="font-serif italic text-white text-base font-semibold">Atur Kode Referensi</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input value={ownerReferralCode} onChange={(e) => setOwnerReferralCode(e.target.value)} placeholder="Kode referensi" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <input value={ownerReferralName} onChange={(e) => setOwnerReferralName(e.target.value)} placeholder="Nama pemilik referensi" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <input value={ownerReferralWhatsapp} onChange={(e) => setOwnerReferralWhatsapp(e.target.value)} placeholder="WhatsApp pemilik referensi" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <input value={ownerReferralBonusAmount} onChange={(e) => setOwnerReferralBonusAmount(e.target.value)} placeholder="Nominal bonus" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                      </div>
+                      <input value={ownerReferralBonusType} onChange={(e) => setOwnerReferralBonusType(e.target.value)} placeholder="Jenis bonus" className="w-full bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <select value={editingReferralCode} onChange={(e) => setEditingReferralCode(e.target.value)} className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none md:col-span-2">
+                          <option value="">Pilih kode untuk pembayaran</option>
+                          {referrals.map(r => <option key={r.code} value={r.code}>{r.code}</option>)}
+                        </select>
+                        <input value={ownerReferralPaymentAmount} onChange={(e) => setOwnerReferralPaymentAmount(e.target.value)} placeholder="Nominal pembayaran" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                        <input value={ownerReferralPaymentNote} onChange={(e) => setOwnerReferralPaymentNote(e.target.value)} placeholder="Catatan pembayaran" className="bg-[#070709] border border-white/10 rounded-xl text-xs px-3 py-2 text-white outline-none" />
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={handleAddReferral} className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-xl">Tambah Kode Referensi</button>
+                        <button onClick={handleSaveReferralPayment} className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2 rounded-xl border border-white/10">Catat Pembayaran</button>
+                      </div>
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {referrals.map((r) => (
+                          <div key={r.code} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm text-white font-semibold">{r.code}</div>
+                              <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white/5 text-white/70">{r.bonusStatus}</div>
+                            </div>
+                            <div className="text-[10px] text-white/40">{r.ownerName} • {r.whatsapp}</div>
+                            <div className="text-[10px] text-white/40">Bonus: {r.bonusType} • Rp {r.bonusAmount.toLocaleString('id-ID')} • Siswa: {r.totalStudents}</div>
+                            <div className="text-[10px] text-white/40">Riwayat bayar: {r.paymentHistory.length}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 space-y-4">
+                      <h4 className="font-serif italic text-white text-base font-semibold">Ringkasan Owner</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-3"><div className="text-white/40">Total Siswa</div><div className="text-white text-lg font-bold">{students.length}</div></div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-3"><div className="text-white/40">Program Aktif</div><div className="text-white text-lg font-bold">{activeProgramCount}</div></div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-3"><div className="text-white/40">Staf Aktif</div><div className="text-white text-lg font-bold">{activeStaffCount}</div></div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-3"><div className="text-white/40">Kode Referensi</div><div className="text-white text-lg font-bold">{referrals.length}</div></div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-2">
+                          <div className="text-white/40 uppercase tracking-wider text-[10px] font-bold">Total Siswa per Program</div>
+                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                            {Object.entries(studentsByProgram).map(([name, count]) => (
+                              <div key={name} className="flex items-center justify-between text-white/80 bg-white/[0.02] rounded-lg px-2 py-1.5"><span>{name}</span><span className="font-bold text-emerald-400">{count}</span></div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-2">
+                          <div className="text-white/40 uppercase tracking-wider text-[10px] font-bold">Total Siswa per Kelas</div>
+                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                            {Object.entries(studentsByClass).map(([name, count]) => (
+                              <div key={name} className="flex items-center justify-between text-white/80 bg-white/[0.02] rounded-lg px-2 py-1.5"><span>{name}</span><span className="font-bold text-indigo-400">{count}</span></div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-2">
+                          <div className="text-white/40 uppercase tracking-wider text-[10px] font-bold">Total Referral Masuk</div>
+                          <div className="text-white text-lg font-bold">{referralStudentTotal}</div>
+                          <div className="text-white/40 text-[10px]">Total bonus terakumulasi: Rp {referralBonusTotal.toLocaleString('id-ID')}</div>
+                        </div>
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-2">
+                          <div className="text-white/40 uppercase tracking-wider text-[10px] font-bold">Pengaturan Sistem</div>
+                          <div className="text-white/80 text-[11px] leading-relaxed">Owner mengatur program, staf, referensi, Drive, Sheets, dan akses peran sistem.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* 1.5 GOOGLE DRIVE TREE EXPLORER & SPREADSHEETS SYNC PLATFORM */}
                 {authRole === 'owner' && (

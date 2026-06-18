@@ -86,15 +86,37 @@ export interface IjazahConfirmation {
 export interface StudentAccount {
   email: string;
   passwordHash: string; // Simulated secure hashed value
-  role: 'siswa' | 'guru' | 'admin';
+  role: 'siswa' | 'guru' | 'admin' | 'owner' | 'developer';
   fullName: string;
   registeredAt: string;
+  active?: boolean;
+  assignedPrograms?: string[];
+  notes?: string;
 }
 
 export interface ClassroomMapping {
   programName: string;
   classroomId: string;
   classroomName: string;
+}
+
+export interface ProgramItem {
+  id: string;
+  name: string;
+  active: boolean;
+  category: 'Paket' | 'Nonpaket' | 'Keterampilan';
+  notes?: string;
+}
+
+export interface ReferralCodeItem {
+  code: string;
+  ownerName: string;
+  whatsapp: string;
+  bonusType: string;
+  bonusAmount: number;
+  totalStudents: number;
+  bonusStatus: 'belum dibayar' | 'sudah dibayar';
+  paymentHistory: { amount: number; paidAt: string; note?: string }[];
 }
 
 export interface PostingHistory {
@@ -233,9 +255,10 @@ const INITIAL_ACCOUNTS: StudentAccount[] = [
   {
     email: 'pkbmsrikandi.cwd.92@gmail.com',
     passwordHash: hashPassword('GantiPasswordAdmin2026!'),
-    role: 'admin',
+    role: 'owner',
     fullName: 'Admin PKBM Srikandi',
-    registeredAt: '2026-06-10T00:00:00Z'
+    registeredAt: '2026-06-10T00:00:00Z',
+    active: true
   },
   {
     email: 'budi.santoso@classroom.demo',
@@ -249,6 +272,28 @@ const INITIAL_ACCOUNTS: StudentAccount[] = [
 const INITIAL_MAPPINGS: ClassroomMapping[] = [
   { programName: 'Agribisnis Tanaman Pangan', classroomId: 'sb_1', classroomName: 'Agribisnis Tanaman Pangan - XI' },
   { programName: 'Kewirausahaan Kreatif PKBM', classroomId: 'sb_2', classroomName: 'Kewirausahaan Kreatif PKBM - XII' }
+];
+
+const INITIAL_PROGRAMS: ProgramItem[] = [
+  { id: 'prog_paket_a', name: 'Paket A', active: true, category: 'Paket' },
+  { id: 'prog_paket_b', name: 'Paket B', active: true, category: 'Paket' },
+  { id: 'prog_paket_c', name: 'Paket C', active: true, category: 'Paket' },
+  { id: 'prog_digital_marketing', name: 'Digital Marketing', active: true, category: 'Keterampilan' },
+  { id: 'prog_membaca', name: 'Pembiasaan Membaca', active: true, category: 'Keterampilan' },
+  { id: 'prog_content_creator', name: 'Content Creator', active: true, category: 'Keterampilan' }
+];
+
+const INITIAL_REFERRALS: ReferralCodeItem[] = [
+  {
+    code: 'REFSRIKANDI',
+    ownerName: 'Tim Referal PKBM Srikandi',
+    whatsapp: '081234567890',
+    bonusType: 'Uang Tunai',
+    bonusAmount: 50000,
+    totalStudents: 0,
+    bonusStatus: 'belum dibayar',
+    paymentHistory: []
+  }
 ];
 
 const INITIAL_POST_HISTORY: PostingHistory[] = [
@@ -324,6 +369,32 @@ export class DatabaseManager {
 
   static saveMappings(list: ClassroomMapping[]) {
     localStorage.setItem('pkbm_mappings', JSON.stringify(list));
+  }
+
+  static getPrograms(): ProgramItem[] {
+    const val = localStorage.getItem('pkbm_programs');
+    if (!val) {
+      localStorage.setItem('pkbm_programs', JSON.stringify(INITIAL_PROGRAMS));
+      return INITIAL_PROGRAMS;
+    }
+    return JSON.parse(val);
+  }
+
+  static savePrograms(list: ProgramItem[]) {
+    localStorage.setItem('pkbm_programs', JSON.stringify(list));
+  }
+
+  static getReferralCodes(): ReferralCodeItem[] {
+    const val = localStorage.getItem('pkbm_referrals');
+    if (!val) {
+      localStorage.setItem('pkbm_referrals', JSON.stringify(INITIAL_REFERRALS));
+      return INITIAL_REFERRALS;
+    }
+    return JSON.parse(val);
+  }
+
+  static saveReferralCodes(list: ReferralCodeItem[]) {
+    localStorage.setItem('pkbm_referrals', JSON.stringify(list));
   }
 
   static getPostHistory(): PostingHistory[] {
