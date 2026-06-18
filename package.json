@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "node ./node_modules/vite/bin/vite.js build",
+    "build:firebase": "node ./node_modules/vite/bin/vite.js build",
+    "build:github": "cross-env VITE_BASE_PATH=/Aladzan-Home-Schooling-App/ node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "clean": "rm -rf dist",
     "lint": "node ./node_modules/typescript/bin/tsc --noEmit"
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^7.0.3",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"

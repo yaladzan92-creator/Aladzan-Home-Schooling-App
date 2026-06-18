@@ -628,6 +628,34 @@ export default function App() {
     setCurrentNav('home');
   };
 
+  const handleClearSession = async () => {
+    try {
+      const authModule = await import('./auth');
+      await authModule.logout();
+    } catch (err) {
+      console.warn('Clear session logout warning:', err);
+    }
+
+    const keysToClear = [
+      'pkbm_drive_config',
+      `pkbm_drive_config_${(currentUser?.email || loggedInEmail || '').toLowerCase()}`,
+    ];
+    keysToClear.forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+    });
+
+    setCurrentUser(null);
+    setGToken(null);
+    setAuthRole('guest');
+    setLoggedInEmail('');
+    setLoggedInName('Tamu / Siswa');
+    setCurrentNav('home');
+    setLoginError('');
+    window.location.reload();
+  };
+
   // Admin: update registration status
   const updateStudentStatus = (studentId: string, newStatus: Student['status']) => {
     const list = students.map(s => {
@@ -827,13 +855,22 @@ export default function App() {
                 <span className="text-[10px] text-emerald-400 block font-mono font-bold uppercase tracking-wider leading-none">{authRole} Area</span>
                 <span className="text-xs text-white/90 block mt-0.5 font-medium">{loggedInName}</span>
               </div>
-              <button
-                onClick={handleLogout}
-                className="bg-white/5 hover:bg-white/10 text-white/80 border border-white/10 hover:text-rose-400 font-bold p-2 rounded-xl transition-all cursor-pointer"
-                title="Keluar dari Akun"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleClearSession}
+                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 hover:text-amber-200 font-bold px-3 py-2 rounded-xl transition-all cursor-pointer text-[10px]"
+                  title="Logout, hapus session lokal, lalu reload"
+                >
+                  Clear Session
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="bg-white/5 hover:bg-white/10 text-white/80 border border-white/10 hover:text-rose-400 font-bold p-2 rounded-xl transition-all cursor-pointer"
+                  title="Keluar dari Akun"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
         </div>

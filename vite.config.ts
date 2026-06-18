@@ -4,8 +4,9 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
+  const basePath = process.env.VITE_BASE_PATH || '/';
   return {
-    base: '/Aladzan-Home-Schooling-App/',
+    base: basePath,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
