@@ -63,8 +63,20 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    await signInWithRedirect(getAuthInstance(), provider);
-    return null;
+    try {
+      const result = await signInWithPopup(getAuthInstance(), provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (!credential?.accessToken) {
+        throw new Error('Failed to get access token from Firebase Auth');
+      }
+
+      cachedAccessToken = credential.accessToken;
+      return { user: result.user, accessToken: cachedAccessToken };
+    } catch (popupErr) {
+      console.warn('Popup sign-in failed, falling back to redirect:', popupErr);
+      await signInWithRedirect(getAuthInstance(), provider);
+      return null;
+    }
   } catch (error: any) {
     console.error('Sign in error:', error);
     throw error;
