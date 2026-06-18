@@ -4,7 +4,8 @@ import {
   initAuth, 
   googleSignIn, 
   logout,
-  getAccessToken
+  getAccessToken,
+  handleRedirectResult
 } from './auth';
 import { 
   Course, 
@@ -167,6 +168,10 @@ export default function App() {
     }
 
     // Connect standard listener
+    handleRedirectResult().catch(err => {
+      console.warn('Redirect auth check failed:', err);
+    });
+
     initAuth(
       (user, token) => {
         setCurrentUser(user);
@@ -409,32 +414,8 @@ export default function App() {
   // Google OAuth Login Trigger
   const handleGoogleSignIn = async () => {
     try {
-      const authResult = await googleSignIn();
-      if (authResult) {
-        const email = authResult.user.email || '';
-        const registered = DatabaseManager.getAccounts().find(a => a.email.toLowerCase() === email.toLowerCase());
-        const isAdminGoogle = email.toLowerCase() === 'pkbmsrikandi.cwd.92@gmail.com' || email.toLowerCase().endsWith('@admin.pkbm');
-
-        if (isAdminGoogle) {
-          setAuthRole('admin');
-          setLoggedInEmail(email);
-          setLoggedInName(authResult.user.displayName || 'Admin PKBM Srikandi');
-          setCurrentNav('dashboard');
-          logAction(email, 'LOGIN', 'Admin login via Google OAuth berhasil.');
-          return;
-        }
-
-        if (registered) {
-          setAuthRole(registered.role);
-          setLoggedInEmail(email);
-          setLoggedInName(registered.fullName || authResult.user.displayName || 'Siswa Kelas');
-          setCurrentNav('dashboard');
-          logAction(email, 'LOGIN', `Login sukses via Google OAuth (${registered.role}).`);
-          return;
-        }
-
-        setLoginError('Akun Google ini belum terdaftar di sistem. Gunakan akun siswa yang sudah dibuat atau hubungi admin.');
-      }
+      await googleSignIn();
+      setLoginError('Mengalihkan ke Google...');
     } catch (e: any) {
       setLoginError(`Google Sign-In failed: ${e.message || e}`);
     }

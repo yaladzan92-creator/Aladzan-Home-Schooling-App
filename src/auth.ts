@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 
 let authInstance: ReturnType<typeof getAuth> | null = null;
@@ -61,16 +61,10 @@ export const initAuth = (
 
 // Must be called from a button click or user interaction
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
-    try {
-      isSigningIn = true;
-      const result = await signInWithPopup(getAuthInstance(), provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Firebase Auth');
-    }
-
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+  try {
+    isSigningIn = true;
+    await signInWithRedirect(getAuthInstance(), provider);
+    return null;
   } catch (error: any) {
     console.error('Sign in error:', error);
     throw error;
@@ -81,6 +75,17 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
+};
+
+export const handleRedirectResult = async () => {
+  const result = await getRedirectResult(getAuthInstance());
+  if (!result) return null;
+
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  if (credential?.accessToken) {
+    cachedAccessToken = credential.accessToken;
+  }
+  return result;
 };
 
 export const logout = async () => {
