@@ -39,12 +39,6 @@ provider.addScope('https://www.googleapis.com/auth/forms.responses.readonly');
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
 
-function shouldUseRedirectFlow() {
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname.toLowerCase();
-  return host.endsWith('github.io') || host.includes('firebaseapp.com') || host.includes('web.app');
-}
-
 // Initialize auth state listener. Call this on app load.
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
@@ -70,11 +64,6 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   try {
     isSigningIn = true;
     try {
-      if (shouldUseRedirectFlow()) {
-        await signInWithRedirect(getAuthInstance(), provider);
-        return null;
-      }
-
       const result = await signInWithPopup(getAuthInstance(), provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (!credential?.accessToken) {
