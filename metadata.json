@@ -1,0 +1,6 @@
+{
+  "name": "PPDB & Manajemen Folder PKBM",
+  "description": "Aplikasi penerimaan peserta didik baru (PPDB) terintegrasi otomatis dengan 11 subfolder Google Drive, sync Google Sheets, Google Classroom roster, dan kurikulum AI Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
