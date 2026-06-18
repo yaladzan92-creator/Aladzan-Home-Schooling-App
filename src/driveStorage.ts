@@ -126,6 +126,24 @@ export async function readSheetRange(spreadsheetId: string, range: string, acces
   return data.values || [];
 }
 
+export interface DriveStorageInfo {
+  storageQuota?: {
+    limit?: string;
+    usage?: string;
+    usageInDrive?: string;
+    usageInDriveTrash?: string;
+  };
+  user?: {
+    displayName?: string;
+    emailAddress?: string;
+  };
+}
+
+export async function getDriveStorageInfo(accessToken: string): Promise<DriveStorageInfo> {
+  const url = `${DRIVE_BASE_URL}/about?fields=storageQuota,user`;
+  return googleFetch(url, accessToken);
+}
+
 /**
  * Resolves the tab name based on student class and package.
  */

@@ -31,6 +31,7 @@ provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.addScope('https://www.googleapis.com/auth/drive');
 provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
 provider.addScope('https://www.googleapis.com/auth/forms.body');
 provider.addScope('https://www.googleapis.com/auth/forms.body.readonly');
 provider.addScope('https://www.googleapis.com/auth/forms.responses.readonly');

@@ -38,6 +38,7 @@ const IjazahForm = lazy(() => import('./components/IjazahForm'));
 const SheetsSimulator = lazy(() => import('./components/SheetsSimulator'));
 const AICoursework = lazy(() => import('./components/AICoursework'));
 const DriveExplorer = lazy(() => import('./components/DriveExplorer'));
+const DriveCenter = lazy(() => import('./components/DriveCenter'));
 
 import { 
   BookOpen, 
@@ -87,7 +88,7 @@ export default function App() {
   const [loggedInName, setLoggedInName] = useState<string>('Tamu / Siswa');
   
   // Tab Routing: 'home' | 'registration' | 'ijazah' | 'login' | 'admin_dashboard' | 'siswa_dashboard' | 'sheets_console'
-  const [currentNav, setCurrentNav] = useState<'home' | 'registration' | 'ijazah' | 'login' | 'dashboard' | 'sheets'>('home');
+  const [currentNav, setCurrentNav] = useState<'home' | 'registration' | 'ijazah' | 'login' | 'dashboard' | 'sheets' | 'drive'>('home');
   
   // Database States loaded via local persistence + Firestore dynamic listeners
   const [students, setStudents] = useState<Student[]>([]);
@@ -640,6 +641,16 @@ export default function App() {
               <span>Google Sheets ({students.length})</span>
             </button>
           )}
+
+          {authRole !== 'guest' && (
+            <button
+              onClick={() => setCurrentNav('drive')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${currentNav === 'drive' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' : 'text-white/60 hover:text-white'}`}
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Google Drive</span>
+            </button>
+          )}
         </nav>
 
         {/* LOGOUT / AUTH TRIGGER */}
@@ -885,6 +896,14 @@ export default function App() {
                 posts={posts}
                 logs={logs}
               />
+            </Suspense>
+          </div>
+        )}
+
+        {currentNav === 'drive' && (
+          <div id="drive-center-view" className="space-y-6">
+            <Suspense fallback={LazyFallback}>
+              <DriveCenter accessToken={gToken} />
             </Suspense>
           </div>
         )}
